@@ -92,6 +92,27 @@ pub(crate) fn parse_type_data<'t>(mut buf: &mut ParseBuffer<'t>) -> Result<TypeD
             Ok(TypeData::Class(class))
         }
 
+        // https://github.com/microsoft/microsoft-pdb/issues/50#issuecomment-737890766
+        LF_STRUCTURE19 => {
+            let mut class = ClassType {
+                kind: ClassKind::Struct,
+                properties: TypeProperties(buf.parse_u32()? as u16),
+                fields: parse_optional_type_index(&mut buf)?,
+                derived_from: parse_optional_type_index(&mut buf)?,
+                vtable_shape: parse_optional_type_index(&mut buf)?,
+                count: buf.parse_u16()?,
+                size: parse_unsigned(&mut buf)? as u16,
+                name: parse_string(leaf, buf)?,
+                unique_name: None,
+            };
+
+            if class.properties.has_unique_name() {
+                class.unique_name = Some(parse_string(leaf, buf)?);
+            }
+
+            Ok(TypeData::Class(class))
+        }
+
         // https://github.com/Microsoft/microsoft-pdb/blob/082c5290e5aff028ae84e43affa8be717aa7af73/include/cvinfo.h#L2580-L2586
         LF_MEMBER | LF_MEMBER_ST => Ok(TypeData::Member(MemberType {
             attributes: FieldAttributes(buf.parse_u16()?),
@@ -303,6 +324,24 @@ pub(crate) fn parse_type_data<'t>(mut buf: &mut ParseBuffer<'t>) -> Result<TypeD
                 count: buf.parse_u16()?,
                 properties: TypeProperties(buf.parse_u16()?),
                 fields: buf.parse()?,
+                size: parse_unsigned(&mut buf)? as u32,
+                name: parse_string(leaf, &mut buf)?,
+                unique_name: None,
+            };
+
+            if union.properties.has_unique_name() {
+                union.unique_name = Some(parse_string(leaf, &mut buf)?);
+            }
+
+            Ok(TypeData::Union(union))
+        }
+
+        // Inferred from LF_STRUCTURE19
+        LF_UNION19 => {
+            let mut union = UnionType {
+                properties: TypeProperties(buf.parse_u32()? as u16),
+                fields: buf.parse()?,
+                count: buf.parse_u16()?,
                 size: parse_unsigned(&mut buf)? as u32,
                 name: parse_string(leaf, &mut buf)?,
                 unique_name: None,
